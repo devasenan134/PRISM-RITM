@@ -77,13 +77,14 @@ def init_experiment(args, model_name):
     cfg.multi_gpu = cfg.ngpus > 1
 
     if cfg.distributed:
-        cfg.device = torch.device('cuda')
+        cfg.device = torch.device('cuda:0')
         cfg.gpu_ids = [cfg.gpu_ids[cfg.local_rank]]
         torch.cuda.set_device(cfg.gpu_ids[0])
     else:
         if cfg.multi_gpu:
             os.environ['CUDA_VISIBLE_DEVICES'] = cfg.gpus
             ngpus = torch.cuda.device_count()
+            # print(ngpus)
             assert ngpus == cfg.ngpus
         cfg.device = torch.device(f'cuda:{cfg.gpu_ids[0]}')
 
