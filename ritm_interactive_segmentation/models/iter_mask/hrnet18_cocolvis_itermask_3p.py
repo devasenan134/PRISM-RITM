@@ -53,7 +53,7 @@ def train(model, cfg, model_cfg):
                                        max_num_merged_objects=2)
 
     trainset = CocoLvisDataset(
-        cfg.LVIS_v1_PATH,
+        cfg.LVIS_PATH,
         split='train',
         augmentator=train_augmentator,
         min_object_area=1000,
