@@ -26,6 +26,8 @@ class ISModel(nn.Module):
         if self.with_prev_mask:
             self.coord_feature_ch += 1
 
+####### CHANGES TO BE MADE FROM CRF-ICL
+
         if use_rgb_conv:
             rgb_conv_layers = [
                 nn.Conv2d(in_channels=3 + self.coord_feature_ch, out_channels=6 + self.coord_feature_ch, kernel_size=1),
@@ -57,6 +59,7 @@ class ISModel(nn.Module):
         else:
             self.dist_maps = DistMaps(norm_radius=norm_radius, spatial_scale=1.0,
                                       cpu_mode=cpu_dist_maps, use_disks=use_disks)
+#######
 
     def forward(self, image, points):
         image, prev_mask = self.prepare_input(image)
