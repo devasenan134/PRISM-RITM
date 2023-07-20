@@ -15,7 +15,7 @@ from isegm.utils.vis import draw_probmap, draw_points
 from isegm.utils.misc import save_checkpoint
 from isegm.utils.serialization import get_config_repr
 from isegm.utils.distributed import get_dp_wrapper, get_sampler, reduce_loss_dict
-from .optimizer import get_optimizer
+from .optimizer import get_optimizer, get_optimizer_with_layerwise_decay
 
 
 class ISTrainer(object):
@@ -23,6 +23,7 @@ class ISTrainer(object):
                  trainset, valset,
                  optimizer='adam',
                  optimizer_params=None,
+                 layerwise_decay=False,
                  image_dump_interval=200,
                  checkpoint_interval=10,
                  tb_dump_period=25,
@@ -34,6 +35,9 @@ class ISTrainer(object):
                  max_num_next_clicks=0,
                  click_models=None,
                  prev_mask_drop_prob=0.0,
+                 use_iterloss=False,
+                 iterloss_weights=None,
+                 use_random_clicks=True,
                  ):
         self.cfg = cfg
         self.model_cfg = model_cfg
@@ -43,6 +47,11 @@ class ISTrainer(object):
         self.tb_dump_period = tb_dump_period
         self.net_inputs = net_inputs
         self.max_num_next_clicks = max_num_next_clicks
+
+        # iterloss
+        self.use_iterloss = use_iterloss
+        self.iterloss_weights = iterloss_weights
+        self.use_random_clicks = use_random_clicks
 
         self.click_models = click_models
         self.prev_mask_drop_prob = prev_mask_drop_prob
@@ -83,7 +92,13 @@ class ISTrainer(object):
             num_workers=cfg.workers
         )
 
-        self.optim = get_optimizer(model, optimizer, optimizer_params)
+        ## optimizer from CFR_ICL ##
+        if layerwise_decay:
+            self.optim = get_optimizer_with_layerwise_decay(model, optimizer, optimizer_params)
+        else:
+            self.optim = get_optimizer(model, optimizer, optimizer_params)
+        ## optimizer from CFR_ICL ##
+
         model = self._load_weights(model)
 
         if cfg.multi_gpu:
@@ -113,12 +128,20 @@ class ISTrainer(object):
                 click_model.to(self.device)
                 click_model.eval()
 
+        self.scaler: torch.cuda.amp.GradScaler
+
     def run(self, num_epochs, start_epoch=None, validation=True):
         if start_epoch is None:
             start_epoch = self.cfg.start_epoch
 
         logger.info(f'Starting Epoch: {start_epoch}')
         logger.info(f'Total Epochs: {num_epochs}')
+
+        ## for iterloss ##
+        if self.cfg.amp:
+            self.scaler = torch.cuda.amp.GradScaler()
+        ## for iterloss ##
+
         for epoch in range(start_epoch, num_epochs):
             self.training(epoch)
             if validation:
@@ -147,9 +170,23 @@ class ISTrainer(object):
             loss, losses_logging, splitted_batch_data, outputs = \
                 self.batch_forward(batch_data)
 
-            self.optim.zero_grad()
-            loss.backward()
-            self.optim.step()
+            ## !!!!!!!!! ## for iterloss
+            accumulate_grad = ((i + 1) % self.cfg.accumulate_grad == 0) or \
+                (i + 1 == len(self.train_data))
+
+            if self.cfg.amp:
+                loss /= self.cfg.accumulate_grad
+                self.scaler.scale(loss).backward()
+                if accumulate_grad:
+                    self.scaler.step(self.optim)
+                    self.scaler.update()
+                    self.optim.zero_grad()
+            else:
+                loss.backward()
+                if accumulate_grad:
+                    self.optim.step()
+                    self.optim.zero_grad()
+            ## !!!!!!!!! ##
 
             losses_logging['overall'] = loss
             reduce_loss_dict(losses_logging)
@@ -246,65 +283,148 @@ class ISTrainer(object):
         with torch.set_grad_enabled(not validation):
             batch_data = {k: v.to(self.device) for k, v in batch_data.items()}
             image, gt_mask, points = batch_data['images'], batch_data['instances'], batch_data['points']
-            orig_image, orig_gt_mask, orig_points = image.clone(), gt_mask.clone(), points.clone()
 
             prev_output = torch.zeros_like(image, dtype=torch.float32)[:, :1, :, :]
-
-            last_click_indx = None
-
-            with torch.no_grad():
-                num_iters = random.randint(0, self.max_num_next_clicks)
-
-                for click_indx in range(num_iters):
-                    last_click_indx = click_indx
-
-                    if not validation:
-                        self.net.eval()
-
-                    if self.click_models is None or click_indx >= len(self.click_models):
-                        eval_model = self.net
-                    else:
-                        eval_model = self.click_models[click_indx]
-
-                    net_input = torch.cat((image, prev_output), dim=1) if self.net.with_prev_mask else image
-                    prev_output = torch.sigmoid(eval_model(net_input, points)['instances'])
-
-                    points = get_next_points(prev_output, orig_gt_mask, points, click_indx + 1)
-
-                    if not validation:
-                        self.net.train()
-
-                if self.net.with_prev_mask and self.prev_mask_drop_prob > 0 and last_click_indx is not None:
-                    zero_mask = np.random.random(size=prev_output.size(0)) < self.prev_mask_drop_prob
-                    prev_output[zero_mask] = torch.zeros_like(prev_output[zero_mask])
-
-            batch_data['points'] = points
-
-            net_input = torch.cat((image, prev_output), dim=1) if self.net.with_prev_mask else image
-            output = self.net(net_input, points)
-
             loss = 0.0
-            loss = self.add_loss('instance_loss', loss, losses_logging, validation,
-                                 lambda: (output['instances'], batch_data['instances']))
-            loss = self.add_loss('instance_aux_loss', loss, losses_logging, validation,
-                                 lambda: (output['instances_aux'], batch_data['instances']))
+
+            if not self.use_random_clicks:
+                points[:] = -1
+                points = get_next_points(prev_output,
+                                         gt_mask,
+                                         points)
+
+            num_iters = random.randint(1, self.max_num_next_clicks)
+
+            if self.use_iterloss:
+                ## iterloss from CFR_ICL ##
+                for click_indx in range(num_iters):
+
+                    # v1
+                    # net_input = torch.cat((image, prev_output), dim=1) \
+                    #     if self.net.with_prev_mask else image
+                    # v2
+                    net_input = torch.cat((image, prev_output.detach()), dim=1) \
+                        if self.net.with_prev_mask else image
+                    output = self._forward(self.net, net_input, points)
+                    loss = self.add_loss(
+                        'instance_loss', loss, losses_logging, validation,
+                        lambda: (output['instances'], batch_data['instances']),
+                        iterloss_step=click_indx,
+                        iterloss_weight=self.iterloss_weights[click_indx])
+                    loss = self.add_loss(
+                        'instance_aux_loss', loss, losses_logging, validation,
+                        lambda: (output['instances'], batch_data['instances']),
+                        iterloss_step=click_indx,
+                        iterloss_weight=self.iterloss_weights[click_indx])
+
+                    prev_output = torch.sigmoid(output['instances'])
+                    if click_indx < num_iters - 1:
+                        points = get_next_points(prev_output,
+                                                gt_mask,
+                                                points)
+
+                    if self.net.with_prev_mask and self.prev_mask_drop_prob > 0:
+                        zero_mask = np.random.random(size=prev_output.size(0)) < self.prev_mask_drop_prob
+                        prev_output[zero_mask] = torch.zeros_like(prev_output[zero_mask])
+
+            else:
+                # iter mask from the actual RITM
+                points, prev_output = self.find_next_n_points(
+                    image,
+                    gt_mask,
+                    points,
+                    prev_output,
+                    num_iters,
+                    not validation
+                )
+
+                net_input = torch.cat((image, prev_output), dim=1) \
+                    if self.net.with_prev_mask else image
+                output = self._forward(self.net, net_input, points)
+
+                loss = self.add_loss(
+                    'instance_loss',
+                    loss,
+                    losses_logging,
+                    validation,
+                    lambda: (output['instances'], batch_data['instances']))
+                loss = self.add_loss(
+                    'instance_aux_loss',
+                    loss,
+                    losses_logging,
+                    validation,
+                    lambda: (output['instances'], batch_data['instances']))
 
             if self.is_master:
                 with torch.no_grad():
                     for m in metrics:
                         m.update(*(output.get(x) for x in m.pred_outputs),
                                  *(batch_data[x] for x in m.gt_outputs))
+
+        batch_data['points'] = points
         return loss, losses_logging, batch_data, output
 
-    def add_loss(self, loss_name, total_loss, losses_logging, validation, lambda_loss_inputs):
+    def find_next_n_points(self, image, gt_mask, points, prev_output,
+                           num_points, eval_mode=False, grad=False):
+        with torch.set_grad_enabled(grad):
+            for _ in range(num_points):
+
+                if eval_mode:
+                    self.net.eval()
+
+                net_input = torch.cat((image, prev_output), dim=1) \
+                    if self.net.with_prev_mask else image
+                prev_output = torch.sigmoid(
+                    self._forward(
+                        self.net,
+                        net_input,
+                        points
+                    )['instances']
+                )
+
+                points = get_next_points(prev_output, gt_mask, points)
+
+                if eval_mode:
+                    self.net.train()
+
+            if self.net.with_prev_mask and self.prev_mask_drop_prob > 0 and num_points > 0:
+                zero_mask = np.random.random(
+                    size=prev_output.size(0)) < self.prev_mask_drop_prob
+                prev_output[zero_mask] = \
+                    torch.zeros_like(prev_output[zero_mask])
+        return points, prev_output
+
+    def _forward(self, model, net_input, points, *args, **kwargs):
+        # handle autocast for automatic mixed precision
+        if self.cfg.amp:
+            with torch.cuda.amp.autocast():
+                output = model(net_input, points, *args, **kwargs)
+        else:
+            output = model(net_input, points, *args, **kwargs)
+        return output
+    
+    ## iterloss from CFR_ICL ##
+
+    def add_loss(self, loss_name, total_loss, losses_logging, validation, lambda_loss_inputs, iterloss_step=None, iterloss_weight=1):
         loss_cfg = self.loss_cfg if not validation else self.val_loss_cfg
         loss_weight = loss_cfg.get(loss_name + '_weight', 0.0)
         if loss_weight > 0.0:
             loss_criterion = loss_cfg.get(loss_name)
             loss = loss_criterion(*lambda_loss_inputs())
             loss = torch.mean(loss)
-            losses_logging[loss_name] = loss
-            loss = loss_weight * loss
+            
+            ## iterloss from CFR_ICL ##
+            if iterloss_step is not None:
+                losses_logging[
+                    loss_name + f'_{iterloss_step}_{iterloss_weight}'
+                ] = loss 
+                loss = loss_weight * loss * iterloss_weight
+            else:
+                # iter mask (RITM)
+                losses_logging[loss_name] = loss
+                loss = loss_weight * loss
+            ## iterloss from CFR_ICL ##
+
             total_loss = total_loss + loss
 
         return total_loss
