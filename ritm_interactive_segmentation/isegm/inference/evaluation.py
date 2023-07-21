@@ -51,6 +51,20 @@ def evaluate_sample(image, gt_mask, predictor, max_iou_thr,
             ious_list.append(iou)
 
             if iou >= max_iou_thr and click_indx + 1 >= min_clicks:
+            #### IDK TO INCLUDE ####
+            #     if iou >= max_iou_thr and click_indx + 1 >= min_clicks:
+            #     if callback is not None:
+            #         callback(image, gt_mask, pred_probs, iou,
+            #                 sample_id, click_indx, clicker.clicks_list, True,
+            #                 predictor.zoom_in)
+            #     break
+
+            # if callback is not None:
+            #     callback(image, gt_mask, pred_probs, iou,
+            #              sample_id, click_indx,
+            #              clicker.clicks_list, False,
+            #              predictor.zoom_in)
+            #### IDK TO INCLUDE ####
                 break
 
         return clicker.clicks_list, np.array(ious_list, dtype=np.float32), pred_probs
