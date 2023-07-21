@@ -51,9 +51,9 @@ def train(model, cfg, model_cfg):
     points_sampler = MultiPointSampler(model_cfg.num_max_points, prob_gamma=0.80,
                                        merge_objects_prob=0.15,
                                        max_num_merged_objects=2)
-
+    
     trainset = CocoLvisDataset(
-        cfg.LVIS_v1_PATH,
+        cfg.LVIS_PATH,
         split='train',
         augmentator=train_augmentator,
         min_object_area=1000,
@@ -64,7 +64,7 @@ def train(model, cfg, model_cfg):
     )
 
     valset = CocoLvisDataset(
-        cfg.LVIS_v1_PATH,
+        cfg.LVIS_PATH,
         split='val',
         augmentator=val_augmentator,
         min_object_area=1000,

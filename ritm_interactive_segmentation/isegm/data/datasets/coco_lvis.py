@@ -19,7 +19,7 @@ class CocoLvisDataset(ISDataset):
         self._images_path = self._split_path / 'images'
         self._masks_path = self._split_path / 'masks'
         self.stuff_prob = stuff_prob
-
+    
         with open(self._split_path / anno_file, 'rb') as f:
             self.dataset_samples = sorted(pickle.load(f).items())
 

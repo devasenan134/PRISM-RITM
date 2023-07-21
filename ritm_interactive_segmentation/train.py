@@ -1,10 +1,14 @@
 import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
 import argparse
 import importlib.util
 
 import torch
 from isegm.utils.exp import init_experiment
 
+# print(torch.cuda.is_available())
 
 def main():
     args = parse_args()
@@ -67,6 +71,25 @@ def parse_args():
 
     parser.add_argument("--local_rank", type=int, default=0)
 
+    
+    # parameters for experimenting
+    parser.add_argument('--layerwise-decay', action='store_true', 
+                        help='layer wise decay for transformer blocks.')
+
+    parser.add_argument('--upsample', type=str, default='x1', 
+                        help='upsample the output.')
+
+    parser.add_argument('--random-split', action='store_true', 
+                        help='random split the patch instead of window split.')
+
+    parser.add_argument("--accumulate-grad", type=int, default=1)
+
+    parser.add_argument('--amp', action='store_true', 
+                        help='use automatic mixed precision')
+
+    parser.add_argument('--debug', action='store_true', 
+                        help='with debug mode, the epoches=1')
+    
     return parser.parse_args()
 
 
