@@ -35,7 +35,7 @@ class ISTrainer(object):
                  max_num_next_clicks=0,
                  click_models=None,
                  prev_mask_drop_prob=0.0,
-                 use_iterloss=False,
+                 use_iterloss=True,
                  iterloss_weights=None,
                  use_random_clicks=True,
                  ):
@@ -405,7 +405,7 @@ class ISTrainer(object):
     
     ## iterloss from CFR_ICL ##
 
-    def add_loss(self, loss_name, total_loss, losses_logging, validation, lambda_loss_inputs, iterloss_step=None, iterloss_weight=1):
+    def add_loss(self, loss_name, total_loss, losses_logging, validation, lambda_loss_inputs, iterloss_step=1, iterloss_weight=1):
         loss_cfg = self.loss_cfg if not validation else self.val_loss_cfg
         loss_weight = loss_cfg.get(loss_name + '_weight', 0.0)
         if loss_weight > 0.0:

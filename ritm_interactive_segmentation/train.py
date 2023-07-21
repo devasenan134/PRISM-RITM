@@ -8,7 +8,7 @@ import importlib.util
 import torch
 from isegm.utils.exp import init_experiment
 
-print(torch.cuda.is_available())
+# print(torch.cuda.is_available())
 
 def main():
     args = parse_args()

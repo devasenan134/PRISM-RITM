@@ -51,7 +51,6 @@ def init_experiment(args, model_name):
     cfg.CHECKPOINTS_PATH = exp_path / 'checkpoints'
     cfg.VIS_PATH = exp_path / 'vis'
     cfg.LOGS_PATH = exp_path / 'logs'
-
     if cfg.local_rank == 0:
         cfg.LOGS_PATH.mkdir(exist_ok=True)
         cfg.CHECKPOINTS_PATH.mkdir(exist_ok=True)
