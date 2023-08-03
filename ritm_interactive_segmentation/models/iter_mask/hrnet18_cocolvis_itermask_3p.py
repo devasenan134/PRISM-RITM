@@ -87,5 +87,8 @@ def train(model, cfg, model_cfg):
                         image_dump_interval=3000,
                         metrics=[AdaptiveIoU()],
                         max_interactive_points=model_cfg.num_max_points,
-                        max_num_next_clicks=3)
+                        max_num_next_clicks=3,
+                        use_iterloss=True,
+                        iterloss_weights=[1, 2, 3],
+                        use_random_clicks=True)
     trainer.run(num_epochs=230)

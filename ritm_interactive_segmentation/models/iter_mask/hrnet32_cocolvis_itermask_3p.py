@@ -59,7 +59,9 @@ def train(model, cfg, model_cfg):
         keep_background_prob=0.05,
         points_sampler=points_sampler,
         epoch_len=30000,
-        stuff_prob=0.30
+        stuff_prob=0.30,
+        copy_paste_prob=0.5,
+        image_mix_prob=0.5
     )
 
     valset = CocoLvisDataset(
@@ -76,7 +78,7 @@ def train(model, cfg, model_cfg):
     }
 
     lr_scheduler = partial(torch.optim.lr_scheduler.MultiStepLR,
-                           milestones=[200, 220], gamma=0.1)
+                           milestones=[100, 100], gamma=0.1)
     trainer = ISTrainer(model, cfg, model_cfg, loss_cfg,
                         trainset, valset,
                         optimizer='adam',
@@ -86,5 +88,8 @@ def train(model, cfg, model_cfg):
                         image_dump_interval=3000,
                         metrics=[AdaptiveIoU()],
                         max_interactive_points=model_cfg.num_max_points,
-                        max_num_next_clicks=3)
-    trainer.run(num_epochs=230)
+                        max_num_next_clicks=3,
+                        use_iterloss=True,
+                        iterloss_weights=[1, 2, 3],
+                        use_random_clicks=True)
+    trainer.run(num_epochs=250)

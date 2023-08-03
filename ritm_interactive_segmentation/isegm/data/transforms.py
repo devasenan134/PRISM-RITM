@@ -5,9 +5,10 @@ import numpy as np
 from albumentations.core.serialization import SERIALIZABLE_REGISTRY
 from albumentations import ImageOnlyTransform, DualTransform
 from albumentations.core.transforms_interface import to_tuple
-from albumentations.augmentations import functional as F
+# from albumentations.augmentations import functional as F
 from isegm.utils.misc import get_bbox_from_mask, expand_bbox, clamp_bbox, get_labels_with_sizes
 
+import albumentations as F
 
 class UniformRandomResize(DualTransform):
     def __init__(self, scale_range=(0.9, 1.1), interpolation=cv2.INTER_LINEAR, always_apply=False, p=1):
