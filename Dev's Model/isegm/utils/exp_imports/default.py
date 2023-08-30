@@ -11,6 +11,11 @@ from isegm.model.metrics import AdaptiveIoU
 from isegm.data.points_sampler import MultiPointSampler
 from isegm.utils.log import logger
 from isegm.model import initializer
+from isegm.model.modeling.metaformer import *
+
+
 
 from isegm.model.is_hrnet_model import HRNetModel
 from isegm.model.is_deeplab_model import DeeplabModel
+
+from isegm.model.is_metaformer import Metaformer

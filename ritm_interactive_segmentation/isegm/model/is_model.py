@@ -59,6 +59,23 @@ class ISModel(nn.Module):
         else:
             self.dist_maps = DistMaps(norm_radius=norm_radius, spatial_scale=1.0,
                                       cpu_mode=cpu_dist_maps, use_disks=use_disks)
+
+        # if use_rgb_conv:
+        #     # Only RITM models need to transform the coordinate features, though they don't use 
+        #     # exact 'rgb_conv'. We keep 'use_rgb_conv' only for compatible issues.
+        #     # The simpleclick models use a patch embedding layer instead 
+        #     mt_layers = [
+        #         nn.Conv2d(in_channels=self.coord_feature_ch, out_channels=16, kernel_size=1),
+        #         nn.LeakyReLU(negative_slope=0.2) if use_leaky_relu else nn.ReLU(inplace=True),
+        #         nn.Conv2d(in_channels=16, out_channels=64, kernel_size=3, stride=2, padding=1),
+        #         ScaleLayer(init_value=0.05, lr_mult=1)
+        #     ]
+        #     self.maps_transform = nn.Sequential(*mt_layers)
+        # else:
+        #     self.maps_transform=nn.Identity()
+
+        # self.dist_maps = DistMaps(norm_radius=norm_radius, spatial_scale=1.0,
+        #                           cpu_mode=cpu_dist_maps, use_disks=use_disks)
 #######
 
     def forward(self, image, points):

@@ -63,6 +63,7 @@ class ISModel(nn.Module):
 
     def forward(self, image, points):
         image, prev_mask = self.prepare_input(image)
+        print("from forward:", image.shape)
         coord_features = self.get_coord_features(image, prev_mask, points)
 
         if self.rgb_conv is not None:
@@ -71,12 +72,15 @@ class ISModel(nn.Module):
         else:
             coord_features = self.maps_transform(coord_features)
             outputs = self.backbone_forward(image, coord_features)
+            # print(outputs)
+            # print(outputs.shape)
+            # print(type(outputs))
 
         outputs['instances'] = nn.functional.interpolate(outputs['instances'], size=image.size()[2:],
                                                          mode='bilinear', align_corners=True)
-        if self.with_aux_output:
-            outputs['instances_aux'] = nn.functional.interpolate(outputs['instances_aux'], size=image.size()[2:],
-                                                             mode='bilinear', align_corners=True)
+        # if self.with_aux_output:
+        #     outputs['instances_aux'] = nn.functional.interpolate(outputs['instances_aux'], size=image.size()[2:],
+        #                                                      mode='bilinear', align_corners=True)
 
         return outputs
 
