@@ -1,4 +1,5 @@
 from isegm.utils.exp_imports.default import *
+from isegm.model.modeling.transformer_helper.cross_entropy_loss import CrossEntropyLoss
 
 MODEL_NAME = 'convformer_s18_in21ft1k'
 
@@ -16,8 +17,10 @@ def init_model(cfg):
         use_disks=True,
         norm_radius=5,
         with_prev_mask=True,
-        random_split=cfg.random_split        
-    )
+        random_split=cfg.random_split,   
+        head_params = dict(in_channels=[240, 480, 960, 1920],in_index=[0, 1, 2, 3],dropout_ratio=0.1,num_classes=1,loss_decode=CrossEntropyLoss(),align_corners=False,upsample=cfg.upsample,channels={'x1': 256, 'x2': 128, 'x4': 64}[cfg.upsample]),
+    ) 
+        
 
     model.to(cfg.device)
     # model.apply(initializer.XavierGluon(rnd_type='gaussian', magnitude=2.0))
